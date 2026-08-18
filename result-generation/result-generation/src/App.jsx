@@ -1,4 +1,5 @@
 import { useState } from "react";
+import QRCode from "qrcode";
 import "./App.css";
 
 const subjects = ["DAA", "CN", "Web Tech", "DS"];
@@ -10,24 +11,35 @@ const initialStudent = {
   semester: "",
 };
 
-const initialMarks = {
+const createInitialMarks = () => ({
   DAA: {
     mse: "",
     ese: "",
+    mseAbsent: false,
+    eseAbsent: false,
   },
+
   CN: {
     mse: "",
     ese: "",
+    mseAbsent: false,
+    eseAbsent: false,
   },
+
   "Web Tech": {
     mse: "",
     ese: "",
+    mseAbsent: false,
+    eseAbsent: false,
   },
+
   DS: {
     mse: "",
     ese: "",
+    mseAbsent: false,
+    eseAbsent: false,
   },
-};
+});
 
 /* =========================================
    GRADE CALCULATION
@@ -51,11 +63,15 @@ const getGrade = (marks) => {
 function App() {
   const [student, setStudent] = useState(initialStudent);
 
-  const [marks, setMarks] = useState(initialMarks);
+  const [marks, setMarks] = useState(createInitialMarks());
 
   const [errors, setErrors] = useState({});
 
   const [result, setResult] = useState(null);
+
+  const [qrCode, setQrCode] = useState("");
+
+  const [currentStep, setCurrentStep] = useState(1);
 
   /* =========================================
      STUDENT DETAILS
@@ -64,11 +80,7 @@ function App() {
   const handleStudentChange = (event) => {
     const { name, value } = event.target;
 
-    /* -----------------------------------------
-       PRN VALIDATION
-       Numbers only
-    ----------------------------------------- */
-
+    /* PRN */
     if (name === "prn") {
       if (!/^\d*$/.test(value)) {
         setErrors((previous) => ({
@@ -80,52 +92,34 @@ function App() {
       }
     }
 
-    /* -----------------------------------------
-       STUDENT NAME VALIDATION
-       Letters and spaces only
-    ----------------------------------------- */
-
+    /* NAME */
     if (name === "name") {
       if (!/^[A-Za-z ]*$/.test(value)) {
         setErrors((previous) => ({
           ...previous,
-          name:
-            "Student Name must contain letters and spaces only",
+          name: "Student Name must contain letters and spaces only",
         }));
 
         return;
       }
     }
 
-    /* -----------------------------------------
-       BRANCH VALIDATION
-       Letters and spaces only
-    ----------------------------------------- */
-
+    /* BRANCH */
     if (name === "branch") {
       if (!/^[A-Za-z ]*$/.test(value)) {
         setErrors((previous) => ({
           ...previous,
-          branch:
-            "Branch must contain letters and spaces only",
+          branch: "Branch must contain letters and spaces only",
         }));
 
         return;
       }
     }
-
-    /* -----------------------------------------
-       UPDATE STUDENT DATA
-    ----------------------------------------- */
 
     setStudent((previous) => ({
       ...previous,
       [name]: value,
     }));
-
-    /* -----------------------------------------
-       CLEAR ERROR AFTER VALID INPUT
-    ----------------------------------------- */
 
     setErrors((previous) => ({
       ...previous,
@@ -134,18 +128,13 @@ function App() {
   };
 
   /* =========================================
-     MARKS INPUT
+     MARKS CHANGE
   ========================================= */
 
-  const handleMarksChange = (
-    subject,
-    type,
-    value
-  ) => {
-    /* -----------------------------------------
-       ALLOW EMPTY VALUE
-    ----------------------------------------- */
+  const handleMarksChange = (subject, type, value) => {
+    const errorKey = `${subject}-${type}`;
 
+    /* Allow empty input */
     if (value === "") {
       setMarks((previous) => ({
         ...previous,
@@ -153,12 +142,13 @@ function App() {
         [subject]: {
           ...previous[subject],
           [type]: "",
+          [`${type}Absent`]: false,
         },
       }));
 
       setErrors((previous) => ({
         ...previous,
-        [`${subject}-${type}`]: "",
+        [errorKey]: "",
       }));
 
       return;
@@ -166,27 +156,19 @@ function App() {
 
     const numericValue = Number(value);
 
-    /* -----------------------------------------
-       MARKS MUST BE BETWEEN 0 AND 100
-    ----------------------------------------- */
-
+    /* Validate marks */
     if (
+      Number.isNaN(numericValue) ||
       numericValue < 0 ||
       numericValue > 100
     ) {
       setErrors((previous) => ({
         ...previous,
-
-        [`${subject}-${type}`]:
-          "Marks must be between 0 and 100",
+        [errorKey]: "Marks must be between 0 and 100",
       }));
 
       return;
     }
-
-    /* -----------------------------------------
-       UPDATE MARKS
-    ----------------------------------------- */
 
     setMarks((previous) => ({
       ...previous,
@@ -194,12 +176,32 @@ function App() {
       [subject]: {
         ...previous[subject],
         [type]: value,
+        [`${type}Absent`]: false,
       },
     }));
 
-    /* -----------------------------------------
-       CLEAR ERROR
-    ----------------------------------------- */
+    setErrors((previous) => ({
+      ...previous,
+      [errorKey]: "",
+    }));
+  };
+
+  /* =========================================
+     ABSENT HANDLER
+  ========================================= */
+
+  const handleAbsentChange = (subject, type, isAbsent) => {
+    setMarks((previous) => ({
+      ...previous,
+
+      [subject]: {
+        ...previous[subject],
+
+        [type]: isAbsent ? "" : previous[subject][type],
+
+        [`${type}Absent`]: isAbsent,
+      },
+    }));
 
     setErrors((previous) => ({
       ...previous,
@@ -208,233 +210,336 @@ function App() {
   };
 
   /* =========================================
-     FORM VALIDATION
+     VALIDATION
   ========================================= */
 
   const validateForm = () => {
     const newErrors = {};
 
-    /* -----------------------------------------
-       PRN VALIDATION
-    ----------------------------------------- */
+    /* PRN */
 
     if (!student.prn.trim()) {
-      newErrors.prn =
-        "PRN Number is required";
+      newErrors.prn = "PRN Number is required";
     } else if (!/^\d+$/.test(student.prn.trim())) {
-      newErrors.prn =
-        "PRN Number must contain numbers only";
+      newErrors.prn = "PRN Number must contain numbers only";
     }
 
-    /* -----------------------------------------
-       STUDENT NAME VALIDATION
-    ----------------------------------------- */
+    /* NAME */
 
     if (!student.name.trim()) {
-      newErrors.name =
-        "Student name is required";
-    } else if (
-      !/^[A-Za-z ]+$/.test(student.name.trim())
-    ) {
+      newErrors.name = "Student name is required";
+    } else if (!/^[A-Za-z ]+$/.test(student.name.trim())) {
       newErrors.name =
         "Student Name must contain letters and spaces only";
     }
 
-    /* -----------------------------------------
-       BRANCH VALIDATION
-    ----------------------------------------- */
+    /* BRANCH */
 
     if (!student.branch.trim()) {
-      newErrors.branch =
-        "Branch is required";
-    } else if (
-      !/^[A-Za-z ]+$/.test(student.branch.trim())
-    ) {
+      newErrors.branch = "Branch is required";
+    } else if (!/^[A-Za-z ]+$/.test(student.branch.trim())) {
       newErrors.branch =
         "Branch must contain letters and spaces only";
     }
 
-    /* -----------------------------------------
-       SEMESTER VALIDATION
-    ----------------------------------------- */
+    /* SEMESTER */
 
     if (!student.semester) {
-      newErrors.semester =
-        "Semester is required";
+      newErrors.semester = "Semester is required";
     }
 
-    /* -----------------------------------------
-       SUBJECT MARKS VALIDATION
-    ----------------------------------------- */
+    /* SUBJECT MARKS */
 
     subjects.forEach((subject) => {
-      const mse = marks[subject].mse;
+      const subjectMarks = marks[subject];
 
-      const ese = marks[subject].ese;
+      const mse = subjectMarks.mse;
+      const ese = subjectMarks.ese;
+
+      const mseAbsent = subjectMarks.mseAbsent;
+      const eseAbsent = subjectMarks.eseAbsent;
 
       /* MSE */
 
-      if (mse === "") {
-        newErrors[
-          `${subject}-mse`
-        ] = "Required";
-      } else if (
-        Number(mse) < 0 ||
-        Number(mse) > 100
+      if (!mseAbsent && mse === "") {
+        newErrors[`${subject}-mse`] = "Required";
+      }
+
+      if (
+        !mseAbsent &&
+        mse !== "" &&
+        (Number(mse) < 0 || Number(mse) > 100)
       ) {
-        newErrors[
-          `${subject}-mse`
-        ] =
+        newErrors[`${subject}-mse`] =
           "Marks must be between 0 and 100";
       }
 
       /* ESE */
 
-      if (ese === "") {
-        newErrors[
-          `${subject}-ese`
-        ] = "Required";
-      } else if (
-        Number(ese) < 0 ||
-        Number(ese) > 100
+      if (!eseAbsent && ese === "") {
+        newErrors[`${subject}-ese`] = "Required";
+      }
+
+      if (
+        !eseAbsent &&
+        ese !== "" &&
+        (Number(ese) < 0 || Number(ese) > 100)
       ) {
-        newErrors[
-          `${subject}-ese`
-        ] =
+        newErrors[`${subject}-ese`] =
           "Marks must be between 0 and 100";
       }
     });
 
     setErrors(newErrors);
 
-    return (
-      Object.keys(newErrors).length === 0
-    );
+    return Object.keys(newErrors).length === 0;
+  };
+
+  /* =========================================
+     GENERATE QR CODE
+  ========================================= */
+
+  const generateQRCode = async (
+    calculatedSubjects,
+    total,
+    percentage,
+    overallResult
+  ) => {
+    const qrData = `
+VISHWAKARMA INSTITUTE OF TECHNOLOGY, PUNE
+
+STUDENT RESULT
+
+PRN: ${student.prn}
+Name: ${student.name}
+Branch: ${student.branch}
+Semester: ${student.semester}
+
+Total Marks: ${total}/400
+Percentage: ${percentage}%
+Overall Result: ${overallResult}
+
+SUBJECT RESULTS
+
+${calculatedSubjects
+  .map(
+    (subject) =>
+      `${subject.subject}: ${subject.status}${
+        subject.status === "PASS" || subject.status === "FAIL"
+          ? ` | Final: ${subject.finalMarks} | Grade: ${subject.grade}`
+          : ""
+      }`
+  )
+  .join("\n")}
+    `;
+
+    try {
+      const qr = await QRCode.toDataURL(qrData, {
+        width: 220,
+        margin: 2,
+      });
+
+      setQrCode(qr);
+    } catch (error) {
+      console.error("QR Code generation failed:", error);
+      setQrCode("");
+    }
   };
 
   /* =========================================
      GENERATE RESULT
   ========================================= */
 
-  const generateResult = () => {
+  const generateResult = async () => {
+    /* Validate */
+
     if (!validateForm()) {
       setResult(null);
       return;
     }
 
-    /* -----------------------------------------
+    /* =========================================
        CALCULATE SUBJECT RESULTS
-    ----------------------------------------- */
+    ========================================= */
 
-    const calculatedSubjects =
-      subjects.map((subject) => {
-        const mse =
-          Number(marks[subject].mse);
+    const calculatedSubjects = subjects.map((subject) => {
+      const subjectMarks = marks[subject];
 
-        const ese =
-          Number(marks[subject].ese);
+      const mseAbsent = subjectMarks.mseAbsent;
+      const eseAbsent = subjectMarks.eseAbsent;
 
-        /*
-          Final Marks =
-          30% of MSE + 70% of ESE
-        */
+      const isAbsent = mseAbsent || eseAbsent;
 
-        const finalMarks =
-          mse * 0.30 +
-          ese * 0.70;
+      /* =========================================
+         ABSENT
+      ========================================= */
 
-        const roundedMarks =
-          Number(finalMarks.toFixed(2));
-
-        const grade =
-          getGrade(roundedMarks);
-
-        const status =
-          roundedMarks >= 40
-            ? "PASS"
-            : "FAIL";
-
+      if (isAbsent) {
         return {
           subject,
 
-          mse,
+          mse: mseAbsent ? "ABSENT" : Number(subjectMarks.mse),
 
-          ese,
+          ese: eseAbsent ? "ABSENT" : Number(subjectMarks.ese),
 
-          finalMarks:
-            roundedMarks,
+          finalMarks: 0,
 
-          grade,
+          grade: "-",
 
-          status,
+          status: "ABSENT",
         };
-      });
+      }
+
+      /* =========================================
+         NORMAL MARKS
+      ========================================= */
+
+      const mse = Number(subjectMarks.mse);
+
+      const ese = Number(subjectMarks.ese);
+
+      /*
+
+        Final Marks =
+        (MSE × 30%) + (ESE × 70%)
+
+      */
+
+      const finalMarks =
+        mse * 0.3 +
+        ese * 0.7;
+
+      const roundedMarks = Number(
+        finalMarks.toFixed(2)
+      );
+
+      /* Grade */
+
+      const grade = getGrade(roundedMarks);
+
+      /* Status */
+
+      const status =
+        roundedMarks >= 40
+          ? "PASS"
+          : "FAIL";
+
+      return {
+        subject,
+
+        mse,
+
+        ese,
+
+        finalMarks: roundedMarks,
+
+        grade,
+
+        status,
+      };
+    });
 
     /* =========================================
-       TOTAL MARKS
+       TOTAL
     ========================================= */
 
-    const total =
-      calculatedSubjects.reduce(
-        (sum, subject) =>
-          sum + subject.finalMarks,
-        0
-      );
+    const total = calculatedSubjects.reduce(
+      (sum, subject) => sum + subject.finalMarks,
+      0
+    );
 
-    const roundedTotal =
-      Number(total.toFixed(2));
+    const roundedTotal = Number(total.toFixed(2));
 
-    /*
-      Maximum marks = 400
-    */
+    /* =========================================
+       PERCENTAGE
+    ========================================= */
 
-    const percentage =
-      Number(
-        (
-          (roundedTotal / 400) *
-          100
-        ).toFixed(2)
-      );
+    const percentage = Number(
+      ((roundedTotal / 400) * 100).toFixed(2)
+    );
 
     /* =========================================
        OVERALL RESULT
     ========================================= */
 
-    /*
-      If even ONE subject has final marks
-      below 40, complete result is FAIL.
-    */
+    const overallPass = calculatedSubjects.every(
+      (subject) => subject.status === "PASS"
+    );
 
-    const overallPass =
-      calculatedSubjects.every(
-        (subject) =>
-          subject.finalMarks >= 40
+    const overallResult = overallPass
+      ? "PASS"
+      : "FAIL";
+
+    /* =========================================
+       PERFORMANCE
+    ========================================= */
+
+    const hasFailedSubject =
+      calculatedSubjects.some(
+        (subject) => subject.status === "FAIL"
       );
 
-    setResult({
-      subjects:
-        calculatedSubjects,
+    const hasAbsentSubject =
+      calculatedSubjects.some(
+        (subject) => subject.status === "ABSENT"
+      );
 
-      total:
-        roundedTotal,
+    let performance;
+
+    if (hasFailedSubject || hasAbsentSubject) {
+      performance = "Needs Improvement";
+    } else if (percentage >= 90) {
+      performance = "Excellent";
+    } else if (percentage >= 75) {
+      performance = "Very Good";
+    } else if (percentage >= 60) {
+      performance = "Good";
+    } else if (percentage >= 50) {
+      performance = "Satisfactory";
+    } else {
+      performance = "Needs Improvement";
+    }
+
+    /* =========================================
+       SAVE RESULT
+    ========================================= */
+
+    setResult({
+      subjects: calculatedSubjects,
+
+      total: roundedTotal,
 
       percentage,
 
-      overallResult:
-        overallPass
-          ? "PASS"
-          : "FAIL",
+      overallResult,
+
+      performance,
     });
 
-    /* -----------------------------------------
+    /* =========================================
+       STEP 3
+    ========================================= */
+
+    setCurrentStep(3);
+
+    /* =========================================
+       GENERATE QR CODE
+    ========================================= */
+
+    await generateQRCode(
+      calculatedSubjects,
+      roundedTotal,
+      percentage,
+      overallResult
+    );
+
+    /* =========================================
        SCROLL TO RESULT
-    ----------------------------------------- */
+    ========================================= */
 
     setTimeout(() => {
       document
-        .getElementById(
-          "result-section"
-        )
+        .getElementById("result-section")
         ?.scrollIntoView({
           behavior: "smooth",
         });
@@ -448,11 +553,15 @@ function App() {
   const resetForm = () => {
     setStudent(initialStudent);
 
-    setMarks(initialMarks);
+    setMarks(createInitialMarks());
 
     setErrors({});
 
     setResult(null);
+
+    setQrCode("");
+
+    setCurrentStep(1);
 
     window.scrollTo({
       top: 0,
@@ -461,11 +570,80 @@ function App() {
   };
 
   /* =========================================
-     PRINT
+     PRINT / SAVE PDF
   ========================================= */
 
   const printResult = () => {
     window.print();
+  };
+
+  /* =========================================
+     GO TO MARKS
+  ========================================= */
+
+  const goToMarks = () => {
+    const studentErrors = {};
+
+    /* PRN */
+
+    if (!student.prn.trim()) {
+      studentErrors.prn =
+        "PRN Number is required";
+    } else if (!/^\d+$/.test(student.prn.trim())) {
+      studentErrors.prn =
+        "PRN Number must contain numbers only";
+    }
+
+    /* NAME */
+
+    if (!student.name.trim()) {
+      studentErrors.name =
+        "Student name is required";
+    } else if (
+      !/^[A-Za-z ]+$/.test(
+        student.name.trim()
+      )
+    ) {
+      studentErrors.name =
+        "Student Name must contain letters and spaces only";
+    }
+
+    /* BRANCH */
+
+    if (!student.branch.trim()) {
+      studentErrors.branch =
+        "Branch is required";
+    } else if (
+      !/^[A-Za-z ]+$/.test(
+        student.branch.trim()
+      )
+    ) {
+      studentErrors.branch =
+        "Branch must contain letters and spaces only";
+    }
+
+    /* SEMESTER */
+
+    if (!student.semester) {
+      studentErrors.semester =
+        "Semester is required";
+    }
+
+    setErrors(studentErrors);
+
+    if (
+      Object.keys(studentErrors).length === 0
+    ) {
+      setCurrentStep(2);
+
+      setTimeout(() => {
+        document
+          .getElementById("marks-section")
+          ?.scrollIntoView({
+            behavior: "smooth",
+          });
+      }, 100);
+    }
   };
 
   /* =========================================
@@ -483,13 +661,27 @@ function App() {
 
         <div className="header-inner">
 
-          <h1>
-            Student Result Generation System
-          </h1>
+          <div className="header-brand">
 
-          <p>
-              {/* Web Technology Assignment */}
-          </p>
+            <img
+              src="/vit-logo.png"
+              alt="VIT Pune Logo"
+              className="header-logo"
+            />
+
+            <div>
+
+              <h1>
+                Vishwakarma Institute of Technology , Pune 
+              </h1>
+
+              <p>
+                Student Result Generation System
+              </p>
+
+            </div>
+
+          </div>
 
         </div>
 
@@ -499,20 +691,133 @@ function App() {
       <main className="container">
 
         {/* =====================================
-            STUDENT INFORMATION
+            STEP INDICATOR
+        ===================================== */}
+
+        <div className="step-container">
+
+          {/* STEP 1 */}
+
+          <div
+            className={
+              currentStep >= 1
+                ? "step active"
+                : "step"
+            }
+          >
+
+            <div className="step-number">
+              1
+            </div>
+
+            <div>
+
+              <strong>
+                Student Information
+              </strong>
+
+              <span>
+                Enter student details
+              </span>
+
+            </div>
+
+          </div>
+
+
+          <div className="step-line"></div>
+
+
+          {/* STEP 2 */}
+
+          <div
+            className={
+              currentStep >= 2
+                ? "step active"
+                : "step"
+            }
+          >
+
+            <div className="step-number">
+              2
+            </div>
+
+            <div>
+
+              <strong>
+                Enter Marks
+              </strong>
+
+              <span>
+                Enter MSE and ESE
+              </span>
+
+            </div>
+
+          </div>
+
+
+          <div className="step-line"></div>
+
+
+          {/* STEP 3 */}
+
+          <div
+            className={
+              currentStep >= 3
+                ? "step active"
+                : "step"
+            }
+          >
+
+            <div className="step-number">
+              3
+            </div>
+
+            <div>
+
+              <strong>
+                Result
+              </strong>
+
+              <span>
+                View & download result
+              </span>
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        {/* =====================================
+            STEP 1
         ===================================== */}
 
         <section className="card">
 
           <div className="section-title">
 
-            <h2>
-              Student Information
-            </h2>
+            <div className="section-heading-row">
 
-            <p>
-              Enter student details.
-            </p>
+              <div className="section-icon">
+                1
+              </div>
+
+              <div>
+
+                <h2>
+                  Student Information
+                </h2>
+
+                <p>
+                  Enter the student's academic details.
+                </p>
+
+              </div>
+
+            </div>
 
           </div>
 
@@ -531,19 +836,15 @@ function App() {
                 type="text"
                 name="prn"
                 value={student.prn}
-                onChange={
-                  handleStudentChange
-                }
+                onChange={handleStudentChange}
                 placeholder="Enter PRN Number"
                 inputMode="numeric"
               />
 
               {errors.prn && (
-
                 <span className="error">
                   {errors.prn}
                 </span>
-
               )}
 
             </div>
@@ -561,18 +862,14 @@ function App() {
                 type="text"
                 name="name"
                 value={student.name}
-                onChange={
-                  handleStudentChange
-                }
+                onChange={handleStudentChange}
                 placeholder="Enter Student Name"
               />
 
               {errors.name && (
-
                 <span className="error">
                   {errors.name}
                 </span>
-
               )}
 
             </div>
@@ -590,18 +887,14 @@ function App() {
                 type="text"
                 name="branch"
                 value={student.branch}
-                onChange={
-                  handleStudentChange
-                }
+                onChange={handleStudentChange}
                 placeholder="Enter Branch"
               />
 
               {errors.branch && (
-
                 <span className="error">
                   {errors.branch}
                 </span>
-
               )}
 
             </div>
@@ -617,42 +910,46 @@ function App() {
 
               <select
                 name="semester"
-                value={
-                  student.semester
-                }
-                onChange={
-                  handleStudentChange
-                }
+                value={student.semester}
+                onChange={handleStudentChange}
               >
 
                 <option value="">
                   Select Semester
                 </option>
 
-                {[1, 2, 3, 4, 5, 6, 7, 8]
-                  .map((semester) => (
-
+                {[1, 2, 3, 4, 5, 6, 7, 8].map(
+                  (semester) => (
                     <option
                       key={semester}
                       value={semester}
                     >
                       Semester {semester}
                     </option>
-
-                  ))}
+                  )
+                )}
 
               </select>
 
-
               {errors.semester && (
-
                 <span className="error">
                   {errors.semester}
                 </span>
-
               )}
 
             </div>
+
+          </div>
+
+
+          <div className="step-action">
+
+            <button
+              className="primary-button"
+              onClick={goToMarks}
+            >
+              Continue to Marks →
+            </button>
 
           </div>
 
@@ -660,20 +957,35 @@ function App() {
 
 
         {/* =====================================
-            MARKS SECTION
+            STEP 2
         ===================================== */}
 
-        <section className="card">
+        <section
+          id="marks-section"
+          className="card"
+        >
 
           <div className="section-title">
 
-            <h2>
-              Enter Marks
-            </h2>
+            <div className="section-heading-row">
 
-            <p>
-              Enter MSE and ESE marks out of 100.
-            </p>
+              <div className="section-icon">
+                2
+              </div>
+
+              <div>
+
+                <h2>
+                  Enter Marks
+                </h2>
+
+                <p>
+                  Enter MSE and ESE marks for each subject.
+                </p>
+
+              </div>
+
+            </div>
 
           </div>
 
@@ -682,54 +994,86 @@ function App() {
 
           <div className="rules">
 
-            <div>
+            <div className="rule-card">
 
-              <strong>
-                MSE
-              </strong>
+              <div className="rule-icon">
+                M
+              </div>
 
-              <span>
-                30%
-              </span>
+              <div>
 
-            </div>
+                <strong>
+                  MSE
+                </strong>
 
+                <span>
+                  30%
+                </span>
 
-            <div>
-
-              <strong>
-                ESE
-              </strong>
-
-              <span>
-                70%
-              </span>
+              </div>
 
             </div>
 
 
-            <div>
+            <div className="rule-card">
 
-              <strong>
-                Passing
-              </strong>
+              <div className="rule-icon">
+                E
+              </div>
 
-              <span>
-                40 / 100
-              </span>
+              <div>
+
+                <strong>
+                  ESE
+                </strong>
+
+                <span>
+                  70%
+                </span>
+
+              </div>
 
             </div>
 
 
-            <div>
+            <div className="rule-card">
 
-              <strong>
-                Total
-              </strong>
+              <div className="rule-icon">
+                ✓
+              </div>
 
-              <span>
-                400
-              </span>
+              <div>
+
+                <strong>
+                  Passing
+                </strong>
+
+                <span>
+                  40 / 100
+                </span>
+
+              </div>
+
+            </div>
+
+
+            <div className="rule-card">
+
+              <div className="rule-icon">
+                Σ
+              </div>
+
+              <div>
+
+                <strong>
+                  Maximum
+                </strong>
+
+                <span>
+                  400
+                </span>
+
+              </div>
 
             </div>
 
@@ -781,27 +1125,58 @@ function App() {
                       </td>
 
 
+                      {/* MSE */}
+
                       <td>
 
                         <input
                           type="number"
                           min="0"
                           max="100"
-                          step="1"
                           value={
-                            marks[
-                              subject
-                            ].mse
+                            marks[subject].mse
                           }
-                          placeholder="0 - 100"
-                          onChange={(event) =>
-                            handleMarksChange(
-                              subject,
-                              "mse",
-                              event.target.value
-                            )
+                          placeholder={
+                            marks[subject]
+                              .mseAbsent
+                              ? "Absent"
+                              : "0 - 100"
+                          }
+                          disabled={
+                            marks[subject]
+                              .mseAbsent
+                          }
+                          onChange={
+                            (event) =>
+                              handleMarksChange(
+                                subject,
+                                "mse",
+                                event.target.value
+                              )
                           }
                         />
+
+                        <label className="absent-option">
+
+                          <input
+                            type="checkbox"
+                            checked={
+                              marks[subject]
+                                .mseAbsent
+                            }
+                            onChange={
+                              (event) =>
+                                handleAbsentChange(
+                                  subject,
+                                  "mse",
+                                  event.target.checked
+                                )
+                            }
+                          />
+
+                          Absent
+
+                        </label>
 
 
                         {errors[
@@ -823,27 +1198,58 @@ function App() {
                       </td>
 
 
+                      {/* ESE */}
+
                       <td>
 
                         <input
                           type="number"
                           min="0"
                           max="100"
-                          step="1"
                           value={
-                            marks[
-                              subject
-                            ].ese
+                            marks[subject].ese
                           }
-                          placeholder="0 - 100"
-                          onChange={(event) =>
-                            handleMarksChange(
-                              subject,
-                              "ese",
-                              event.target.value
-                            )
+                          placeholder={
+                            marks[subject]
+                              .eseAbsent
+                              ? "Absent"
+                              : "0 - 100"
+                          }
+                          disabled={
+                            marks[subject]
+                              .eseAbsent
+                          }
+                          onChange={
+                            (event) =>
+                              handleMarksChange(
+                                subject,
+                                "ese",
+                                event.target.value
+                              )
                           }
                         />
+
+                        <label className="absent-option">
+
+                          <input
+                            type="checkbox"
+                            checked={
+                              marks[subject]
+                                .eseAbsent
+                            }
+                            onChange={
+                              (event) =>
+                                handleAbsentChange(
+                                  subject,
+                                  "ese",
+                                  event.target.checked
+                                )
+                            }
+                          />
+
+                          Absent
+
+                        </label>
 
 
                         {errors[
@@ -884,6 +1290,7 @@ function App() {
               Calculation:
             </strong>
 
+            {" "}
             Final Marks =
             (MSE × 30%) +
             (ESE × 70%)
@@ -897,19 +1304,14 @@ function App() {
 
             <button
               className="primary-button"
-              onClick={
-                generateResult
-              }
+              onClick={generateResult}
             >
-              Generate Result
+              Generate Result →
             </button>
-
 
             <button
               className="secondary-button"
-              onClick={
-                resetForm
-              }
+              onClick={resetForm}
             >
               Reset
             </button>
@@ -920,7 +1322,7 @@ function App() {
 
 
         {/* =====================================
-            RESULT
+            STEP 3 RESULT
         ===================================== */}
 
         {result && (
@@ -934,25 +1336,25 @@ function App() {
 
             <div className="result-heading">
 
-            <img
-           src="/vit-logo.png"
-           alt="VIT Pune Logo"
-           className="college-logo"
-           />
+              <img
+                src="/vit-logo.png"
+                alt="VIT Pune Logo"
+                className="college-logo"
+              />
 
-           <h1>
-            VISHWAKARMA INSTITUTE OF TECHNOLOGY, PUNE
-            </h1>
+              <h1>
+                VISHWAKARMA INSTITUTE OF TECHNOLOGY, PUNE
+              </h1>
 
-            <h2>
-            STUDENT RESULT
-           </h2>
+              <p>
+                STUDENT RESULT
+              </p>
 
-            <p>
-            STATEMENT OF MARKS
-            </p>
+              <span>
+                STATEMENT OF MARKS
+              </span>
 
-           </div>
+            </div>
 
 
             {/* STUDENT DETAILS */}
@@ -1065,62 +1467,91 @@ function App() {
                 <tbody>
 
                   {result.subjects.map(
-                    (subject, index) => (
+                    (subject, index) => {
 
-                      <tr
-                        key={
-                          subject.subject
-                        }
-                      >
+                      const isAbsent =
+                        subject.status === "ABSENT";
 
-                        <td>
-                          {index + 1}
-                        </td>
+                      return (
 
-                        <td className="subject">
-                          {
-                            subject.subject
-                          }
-                        </td>
+                        <tr
+                          key={subject.subject}
+                        >
 
-                        <td>
-                          {subject.mse}
-                        </td>
+                          <td>
+                            {index + 1}
+                          </td>
 
-                        <td>
-                          {subject.ese}
-                        </td>
+                          <td className="subject">
+                            {subject.subject}
+                          </td>
 
-                        <td className="bold">
-                          {
-                            subject.finalMarks
-                          }
-                        </td>
+                          <td>
 
-                        <td className="grade">
-                          {subject.grade}
-                        </td>
+                            {subject.mse === "ABSENT"
+                              ? (
+                                <span className="absent-text">
+                                  ABSENT
+                                </span>
+                              )
+                              : subject.mse}
 
-                        <td>
+                          </td>
 
-                          <span
-                            className={
-                              subject.status ===
-                              "PASS"
-                                ? "pass"
-                                : "fail"
-                            }
-                          >
-                            {
-                              subject.status
-                            }
-                          </span>
 
-                        </td>
+                          <td>
 
-                      </tr>
+                            {subject.ese === "ABSENT"
+                              ? (
+                                <span className="absent-text">
+                                  ABSENT
+                                </span>
+                              )
+                              : subject.ese}
 
-                    )
+                          </td>
+
+
+                          <td className="bold">
+
+                            {isAbsent
+                              ? "-"
+                              : subject.finalMarks}
+
+                          </td>
+
+
+                          <td className="grade">
+
+                            {isAbsent
+                              ? "-"
+                              : subject.grade}
+
+                          </td>
+
+
+                          <td>
+
+                            <span
+                              className={
+                                subject.status === "PASS"
+                                  ? "pass"
+                                  : subject.status === "ABSENT"
+                                  ? "absent"
+                                  : "fail"
+                              }
+                            >
+
+                              {subject.status}
+
+                            </span>
+
+                          </td>
+
+                        </tr>
+
+                      );
+                    }
                   )}
 
                 </tbody>
@@ -1130,61 +1561,137 @@ function App() {
             </div>
 
 
-            {/* SUMMARY */}
+            {/* =====================================
+                PERFORMANCE CARDS
+            ===================================== */}
 
-            <div className="summary">
+            <div className="performance-grid">
 
-              <div>
+              {/* PERCENTAGE */}
 
-                <span>
-                  Total Marks
-                </span>
+              <div className="performance-card">
 
-                <strong>
-                  {result.total} / 400
-                </strong>
+                <div className="performance-icon">
+                  %
+                </div>
+
+                <div>
+
+                  <span>
+                    Percentage
+                  </span>
+
+                  <strong>
+                    {result.percentage}%
+                  </strong>
+
+                  <small>
+                    Overall percentage
+                  </small>
+
+                </div>
 
               </div>
 
 
-              <div>
+              {/* PERFORMANCE */}
 
-                <span>
-                  Percentage
-                </span>
+              <div className="performance-card">
 
-                <strong>
-                  {result.percentage}%
-                </strong>
+                <div className="performance-icon">
+                  ★
+                </div>
+
+                <div>
+
+                  <span>
+                    Performance
+                  </span>
+
+                  <strong>
+                    {result.performance}
+                  </strong>
+
+                  <small>
+                    Based on subject-wise performance
+                  </small>
+
+                </div>
 
               </div>
 
+
+              {/* RESULT */}
 
               <div
                 className={
-                  result.overallResult ===
-                  "PASS"
-                    ? "overall-pass"
-                    : "overall-fail"
+                  result.overallResult === "PASS"
+                    ? "performance-card result-pass"
+                    : "performance-card result-fail"
                 }
               >
 
-                <span>
-                  Overall Result
-                </span>
+                <div className="performance-icon">
+                  ✓
+                </div>
 
-                <strong>
-                  {
-                    result.overallResult
-                  }
-                </strong>
+                <div>
+
+                  <span>
+                    Overall Result
+                  </span>
+
+                  <strong>
+                    {result.overallResult}
+                  </strong>
+
+                  <small>
+                    Academic status
+                  </small>
+
+                </div>
 
               </div>
 
             </div>
 
 
-            {/* GRADE SCALE */}
+            {/* =====================================
+                QR CODE
+            ===================================== */}
+
+            <div className="qr-section">
+
+              <div>
+
+                <h3>
+                  Result Verification
+                </h3>
+
+                <p>
+                  Scan the QR code to view
+                  the student's result information.
+                </p>
+
+              </div>
+
+
+              {qrCode && (
+
+                <img
+                  src={qrCode}
+                  alt="Result QR Code"
+                  className="qr-code"
+                />
+
+              )}
+
+            </div>
+
+
+            {/* =====================================
+                GRADE SCALE
+            ===================================== */}
 
             <div className="grade-scale">
 
@@ -1215,66 +1722,38 @@ function App() {
                 <tbody>
 
                   <tr>
-                    <td>
-                      91 - 100
-                    </td>
-                    <td>
-                      A+
-                    </td>
+                    <td>91 - 100</td>
+                    <td>A+</td>
                   </tr>
 
                   <tr>
-                    <td>
-                      81 - 90
-                    </td>
-                    <td>
-                      A
-                    </td>
+                    <td>81 - 90</td>
+                    <td>A</td>
                   </tr>
 
                   <tr>
-                    <td>
-                      71 - 80
-                    </td>
-                    <td>
-                      B+
-                    </td>
+                    <td>71 - 80</td>
+                    <td>B+</td>
                   </tr>
 
                   <tr>
-                    <td>
-                      61 - 70
-                    </td>
-                    <td>
-                      B
-                    </td>
+                    <td>61 - 70</td>
+                    <td>B</td>
                   </tr>
 
                   <tr>
-                    <td>
-                      51 - 60
-                    </td>
-                    <td>
-                      C+
-                    </td>
+                    <td>51 - 60</td>
+                    <td>C+</td>
                   </tr>
 
                   <tr>
-                    <td>
-                      40 - 50
-                    </td>
-                    <td>
-                      C
-                    </td>
+                    <td>40 - 50</td>
+                    <td>C</td>
                   </tr>
 
                   <tr>
-                    <td>
-                      Below 40
-                    </td>
-                    <td>
-                      F
-                    </td>
+                    <td>Below 40</td>
+                    <td>F</td>
                   </tr>
 
                 </tbody>
@@ -1298,23 +1777,31 @@ function App() {
                 A minimum of 40 marks is required
                 in every subject. Failure in any
                 one subject results in an overall
-                FAIL.
+                FAIL. If a student is absent in
+                MSE or ESE, that examination is
+                marked as ABSENT.
               </p>
 
             </div>
 
 
-            {/* PRINT BUTTON */}
+            {/* BUTTONS */}
 
             <div className="print-area">
 
               <button
                 className="print-button"
-                onClick={
-                  printResult
-                }
+                onClick={printResult}
               >
-                Print Result
+                🖨 Print / Save as PDF
+              </button>
+
+
+              <button
+                className="secondary-button"
+                onClick={resetForm}
+              >
+                Generate Another Result
               </button>
 
             </div>
@@ -1331,8 +1818,15 @@ function App() {
       ===================================== */}
 
       <footer>
-        Student Result Generation System
-        | React
+
+        <strong>
+          Vishwakarma Institute of Technology, Pune
+        </strong>
+
+        <span>
+          Student Result Generation System
+        </span>
+
       </footer>
 
     </div>
